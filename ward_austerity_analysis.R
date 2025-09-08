@@ -8,14 +8,13 @@
 # ward level dataset created by `ward-austerity-modern.R`.
 #
 # The code follows the style requested by the user and
-# makes use of the packages fixest, data.table, plyr,
+# makes use of the packages fixest, data.table,
 # janitor and ggplot2.  Each major step is documented so
 # that the workflow is transparent and reproducible.
 
 suppressPackageStartupMessages({
   library(data.table)
   library(fixest)
-  library(plyr)
   library(janitor)
   library(ggplot2)
 })
@@ -38,11 +37,31 @@ if(!exists("WARD17_SAVE2")){
 dt <- as.data.table(WARD17_SAVE2)
 dt <- clean_names(dt)
 
+# -------------------------------------------------------
+# Attach local authority referendum results
+# -------------------------------------------------------
+
+# Lookup from wards to local authority districts
+lookup <- clean_names(fread("Ward_to_Local_Authority_District_December_2017_Lookup_in_the_United_Kingdom.csv"))
+lookup <- lookup[, .(wd17cd, lad17cd, lad17nm)]
+setnames(lookup, c("lad17cd", "lad17nm"), c("lad_code", "lad_name"))
+dt <- merge(dt, lookup, by = "wd17cd", all.x = TRUE)
+
+# Local authority referendum results
+la_res <- clean_names(fread("EU-referendum-result-data.csv"))
+setnames(la_res, c("area_code", "area", "region_code", "region"),
+         c("lad_code", "lad_name_la", "region_code", "region_name"))
+la_cols <- setdiff(names(la_res), c("lad_code", "lad_name_la", "region_code", "region_name"))
+setnames(la_res, la_cols, paste0("lad_", la_cols))
+dt <- merge(dt, la_res, by = "lad_code", all.x = TRUE)
+dt[is.na(lad_name), lad_name := lad_name_la]
+dt[, lad_name_la := NULL]
+
 # Create a numeric identifier for fixed effects.  The Stata
-# code encodes `LAD17CD`; if this variable is missing we fall
+# code encodes `lad_code`; if this variable is missing we fall
 # back to the ward code `wd17cd`.
-if("lad17cd" %in% names(dt)){
-  dt[, id := as.integer(factor(lad17cd))]
+if("lad_code" %in% names(dt)){
+  dt[, id := as.integer(factor(lad_code))]
 } else if("wd17cd" %in% names(dt)){
   dt[, id := as.integer(factor(substr(wd17cd, 1, 3)))]
 } else {
@@ -130,17 +149,18 @@ for(v in wp_vars){
 # Main model: Ward Leave percentage on 2016q2 JSA sanctions
 # controlling for contemporaneous claimant stock and basic
 # demographic controls
-main_model <- feols(
-  ward_leave_pct ~ jsa_sanction_2016q2 + claim_jobseekers_2016q2 +
-    .[, ..controls_imig] + .[, ..controls_demo] | id,
-  cluster = ~id, data = dt
-)
+rhs_vars <- c("jsa_sanction_2016q2", "claim_jobseekers_2016q2",
+              controls_imig, controls_demo)
+fml_main <- as.formula(paste("ward_leave_pct ~",
+                              paste(rhs_vars, collapse = " + "),
+                              "| id"))
+main_model <- feols(fml_main, cluster = ~id, data = dt)
 main_estimate <- coef(main_model)["jsa_sanction_2016q2"]
 
 # Function to collect coefficients from a sequence of
 # quarterly variables
 time_simulation <- function(prefix, quarters, add_claim = FALSE){
-  ldply(quarters, function(q){
+  res <- lapply(quarters, function(q){
     var <- paste0(prefix, q)
     if(!var %in% names(dt)) return(NULL)
     rhs <- var
@@ -148,15 +168,16 @@ time_simulation <- function(prefix, quarters, add_claim = FALSE){
       claim_var <- paste0("claim_jobseekers", sub(prefix, "", var))
       if(claim_var %in% names(dt)) rhs <- paste(rhs, "+", claim_var)
     }
-    rhs <- paste(rhs, "+", paste(c(controls_imig, controls_demo), collapse = "+"))
+    rhs <- paste(rhs, "+", paste(c(controls_imig, controls_demo), collapse = " + "))
     fml <- as.formula(paste("ward_leave_pct ~", rhs, "| id"))
     mod <- feols(fml, cluster = ~id, data = dt)
     ci <- confint(mod, var)
-    data.frame(var = var,
+    data.table(var = var,
                estimate = coef(mod)[var],
                conf_low = ci[1],
                conf_high = ci[2])
   })
+  rbindlist(res)
 }
 
 # JSA sanctions simulation
@@ -273,7 +294,115 @@ make_coef_plot(model_wp_recent, wp_recent,
                "ward_benefit_sanctions_wp.png")
 
 # -------------------------------------------------------
-# 6. Summary table of key estimates
+# 6. Robustness checks
+# -------------------------------------------------------
+
+# Subsample of local authorities
+la_codes <- unique(dt[!is.na(ward_leave_pct), lad_code])
+subsample_draws <- 50
+subsample_coefs <- replicate(subsample_draws, {
+  samp <- sample(la_codes, size = ceiling(length(la_codes) * 0.5))
+  mod <- feols(fml_main, cluster = ~id, data = dt[lad_code %in% samp])
+  coef(mod)["jsa_sanction_2016q2"]
+})
+
+# Dropping regions one at a time
+region_codes <- unique(dt$region_code)
+drop_region_coefs <- sapply(region_codes, function(r){
+  mod <- feols(fml_main, cluster = ~id, data = dt[region_code != r])
+  coef(mod)["jsa_sanction_2016q2"]
+})
+
+# Collect and plot robustness estimates
+robust_dt <- rbind(
+  data.table(scenario = "Subsample LAs", estimate = subsample_coefs),
+  data.table(scenario = "Drop Region", estimate = drop_region_coefs)
+)
+
+p_robust <- ggplot(robust_dt, aes(x = scenario, y = estimate)) +
+  geom_boxplot(fill = "lightgrey") +
+  geom_hline(yintercept = main_estimate, colour = "blue") +
+  labs(x = "", y = "Coefficient",
+       title = "Robustness of JSA sanction effect") +
+  theme_minimal()
+
+ggsave("robustness_boxplots.png", p_robust, width = 7, height = 5)
+
+# -------------------------------------------------------
+# 7. Falsification tests and correlation overlap
+# -------------------------------------------------------
+
+dt[, sanc_diff := jsa_sanction_2016q2 - jsa_sanction_2015q4]
+dt[, ref_diff := wp_mandatory_2016q1 - wp_mandatory_2015q4]
+corr_ref_sanc <- dt[, cor(ref_diff, sanc_diff, use = "complete.obs")]
+
+p_corr <- ggplot(dt, aes(x = ref_diff, y = sanc_diff)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE, colour = "red") +
+  labs(x = "Change in WP referrals (2016q1 vs 2015q4)",
+       y = "Change in JSA sanctions (2016q2 vs 2015q4)",
+       title = sprintf("Correlation %.2f", corr_ref_sanc)) +
+  theme_minimal()
+ggsave("referrals_sanctions_correlation.png", p_corr, width = 7, height = 5)
+
+p_sanc_leave <- ggplot(dt, aes(x = sanc_diff, y = ward_leave_pct)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE, colour = "red") +
+  labs(x = "Change in JSA sanctions (2016q2 vs 2015q4)",
+       y = "Ward Leave %",
+       title = "Sanctions and Leave voting") +
+  theme_minimal()
+ggsave("sanctions_leave.png", p_sanc_leave, width = 7, height = 5)
+
+ref_vars <- c("wp_mandatory_2015q2", "wp_mandatory_2015q3",
+             "wp_mandatory_2015q4", "wp_mandatory_2016q1",
+             "wp_mandatory_2016q2")
+ref_fml <- as.formula(paste("jsa_sanction_2016q2 ~",
+                             paste(ref_vars, collapse = " + "),
+                             "| id"))
+ref_model <- feols(ref_fml, cluster = ~id, data = dt)
+make_coef_plot(ref_model, ref_vars,
+               "Referrals predicting sanctions",
+               "referrals_to_sanctions.png")
+
+# -------------------------------------------------------
+# 8. Saturation with additional controls
+# -------------------------------------------------------
+
+control_sets <- list(
+  base = c(controls_imig, controls_demo),
+  plus_edu = c(controls_imig, controls_demo, controls_edu),
+  plus_tenure = c(controls_imig, controls_demo, controls_edu, controls_tenure),
+  plus_nssec = c(controls_imig, controls_demo, controls_edu, controls_tenure, controls_nssec),
+  plus_sector = c(controls_imig, controls_demo, controls_edu, controls_tenure, controls_nssec, controls_sector),
+  full = c(controls_imig, controls_demo, controls_edu, controls_tenure,
+           controls_nssec, controls_sector,
+           "lad_pct_leave", "lad_pct_turnout")
+)
+
+sat_dt <- rbindlist(lapply(names(control_sets), function(n){
+  rhs <- c("jsa_sanction_2016q2", "claim_jobseekers_2016q2", control_sets[[n]])
+  fml <- as.formula(paste("ward_leave_pct ~", paste(rhs, collapse = " + "), "| id"))
+  mod <- feols(fml, cluster = ~id, data = dt)
+  ci <- confint(mod, "jsa_sanction_2016q2")
+  data.table(model = n,
+             estimate = coef(mod)["jsa_sanction_2016q2"],
+             conf_low = ci[1],
+             conf_high = ci[2])
+}))
+
+p_sat <- ggplot(sat_dt, aes(x = model, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf_low, ymax = conf_high)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_flip() +
+  labs(x = "Control set", y = "Coefficient",
+       title = "Sanction effect with added controls") +
+  theme_minimal()
+ggsave("control_sets_coefs.png", p_sat, width = 7, height = 5)
+
+# -------------------------------------------------------
+# 9. Summary table of key estimates
 # -------------------------------------------------------
 
 etable(main_model, pip_model, wp_model,
