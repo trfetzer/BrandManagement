@@ -79,8 +79,8 @@ if(length(missing_files) > 0) {
 
 # Load 2017 ward boundaries using sf
 cat("Loading 2017 ward boundaries...\n")
-if(file.exists("Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Britain/Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Britain.shp")) {
-  WARD17.sf <- st_read("Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Britain/Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Britain.shp")
+if(file.exists("shapefiles/Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Britain/Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Britain.shp")) {
+  WARD17.sf <- st_read("shapefiles/Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Britain/Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Britain.shp")
   WARD17 <- data.table(WARD17.sf)
 } else {
   cat("Error: 2017 ward boundaries shapefile not found\n")
@@ -89,8 +89,8 @@ if(file.exists("Wards_December_2017_Generalised_Clipped_Boundaries_in_Great_Brit
 
 # Load EU referendum data
 cat("Loading EU referendum data...\n")
-if(file.exists("EU-referendum-result-data.csv")) {
-  EUREF <- data.table(read.csv("EU-referendum-result-data.csv"))
+if(file.exists("Ward EURef/EU-referendum-result-data.csv")) {
+  EUREF <- data.table(read.csv("Ward EURef/EU-referendum-result-data.csv"))
   # The EU referendum data is at local authority level, not ward level
   # We'll skip this merge for now as the ward boundaries don't have LAD17CD
   cat("Loaded EU referendum data for", nrow(EUREF), "local authorities (skipping merge - different level)\n")
@@ -98,8 +98,8 @@ if(file.exists("EU-referendum-result-data.csv")) {
   cat("Warning: EU referendum data not found\n")
 }
 
-if(file.exists("ward-results.csv")) {
-  REF <- data.table(read.csv("ward-results.csv"))
+if(file.exists("Ward EURef/ward-results.csv")) {
+  REF <- data.table(read.csv("Ward EURef/ward-results.csv"))
   REF <- REF[WardCode != ""]
   # Use the correct column names from ward-results.csv
   REF <- REF[, list(wd17cd = WardCode, Ward_Remain = Remain, Ward_Leave = Leave, 
@@ -112,8 +112,8 @@ if(file.exists("ward-results.csv")) {
 
 # Load population data
 cat("Loading population data...\n")
-if(file.exists("WARD_POP_2015.csv")) {
-  POP <- data.table(read.csv("WARD_POP_2015.csv"))
+if(file.exists("Ward Characteristics/WARD_POP_2015.csv")) {
+  POP <- data.table(read.csv("Ward Characteristics/WARD_POP_2015.csv"))
   POP[, All.Ages := as.numeric(gsub(",", "", All.Ages))]
   POP.WARD <- POP[, list(wd15cd = Ward, POP2015 = as.numeric(gsub(",", "", All.Ages)))][wd15cd != ""]
   WARD17 <- merge(WARD17, POP.WARD[, list(wd15cd, POP2015)], by.x = "wd17cd", by.y = "wd15cd", all.x = TRUE)
@@ -277,7 +277,7 @@ for(ff in ffs) {
   }
 }
 
-CLAIM[, list := gsub("\\"Item Name  :\\",\\"|\\"", "", list)]
+CLAIM[, list := gsub("\"Item Name  :\",|\"", "", list)]
 CLAIM <- unique(CLAIM)
 saveRDS(CLAIM, file = "intermediate/claim_raw.rds")
 
@@ -313,8 +313,8 @@ if (file.exists("shapefiles/CASW/UK_caswa_2001NAD1936.shp")) {
 }
 
 cat("Processing housing benefit cuts...\n")
-if (file.exists("Ward Level/Ward Level Austerity/HB_COUNT.csv")) {
-  HBC <- data.table(read.csv("Ward Level/Ward Level Austerity/HB_COUNT.csv"))
+if (file.exists("Ward Level Austerity/HB_COUNT.csv")) {
+  HBC <- data.table(read.csv("Ward Level Austerity/HB_COUNT.csv"))
   HBC.LONG <- melt(HBC, id.vars = "OA")
   HBC.LONG <- HBC.LONG[variable != "Month" & value != ".." & !is.na(value)]
   HBC.LONG[, date := str_extract(variable, "[0-9]{6}")]
@@ -331,8 +331,8 @@ if (file.exists("Ward Level/Ward Level Austerity/HB_COUNT.csv")) {
 } else { cat("Warning: housing benefit cuts file not found\n") }
 
 cat("Processing bedroom tax cases...\n")
-if (file.exists("Ward Level/Ward Level Austerity/BEDROOM_TAX_CASES.csv")) {
-  BTX <- data.table(read.csv("Ward Level/Ward Level Austerity/BEDROOM_TAX_CASES.csv"))
+if (file.exists("Ward Level Austerity/BEDROOM_TAX_CASES.csv")) {
+  BTX <- data.table(read.csv("Ward Level Austerity/BEDROOM_TAX_CASES.csv"))
   BTX[Type == "", Type := NA]
   BTX[, Type := na.locf(Type)]
   BTX <- BTX[Type == "Reduction applied"]
@@ -351,8 +351,8 @@ if (file.exists("Ward Level/Ward Level Austerity/BEDROOM_TAX_CASES.csv")) {
 } else { cat("Warning: bedroom tax file not found\n") }
 
 cat("Processing PIP registrations...\n")
-if (file.exists("Ward Level/Ward Level Austerity/PIP Registrations.csv")) {
-  PIP <- data.table(read.csv("Ward Level/Ward Level Austerity/PIP Registrations.csv"))
+if (file.exists("Ward Level Austerity/PIP Registrations.csv")) {
+  PIP <- data.table(read.csv("Ward Level Austerity/PIP Registrations.csv"))
   PIP[OA == "", OA := NA]
   PIP[, OA := na.locf(OA)]
   PIP.LONG <- melt(PIP, id.vars = c("OA","Type"))
@@ -370,8 +370,8 @@ if (file.exists("Ward Level/Ward Level Austerity/PIP Registrations.csv")) {
 } else { cat("Warning: PIP registrations file not found\n") }
 
 cat("Processing JSA sanctions...\n")
-if (file.exists("Ward Level/Ward Level Austerity/JSA Sanctions high frequency around ref.csv")) {
-  JSA <- data.table(read.csv("Ward Level/Ward Level Austerity/JSA Sanctions high frequency around ref.csv"))
+if (file.exists("Ward Level Austerity/JSA Sanctions high frequency around ref.csv")) {
+  JSA <- data.table(read.csv("Ward Level Austerity/JSA Sanctions high frequency around ref.csv"))
   JSA[OA == "", OA := NA]
   JSA[, OA := na.locf(OA)]
   JSA.LONG <- melt(JSA, id.vars = c("OA","Type"))
@@ -450,6 +450,7 @@ cat("Columns:", paste(names(WARD17), collapse = ", "), "\n")
 cat("\nSaving EUREF.WARDLEVEL.dta...\n")
 # Remove geometry column before saving as .dta
 WARD17_SAVE <- WARD17[, !"geometry"]
+setnames(WARD17_SAVE, names(WARD17_SAVE), janitor::make_clean_names(names(WARD17_SAVE)))
 write_dta(WARD17_SAVE, "EUREF.WARDLEVEL.dta")
 cat("Dataset saved successfully!\n")
 
