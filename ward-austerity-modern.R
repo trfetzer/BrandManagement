@@ -128,14 +128,6 @@ if(file.exists("Ward Characteristics/WARD_POP_2015.csv")) {
   cat("Warning: Population data not found\n")
 }
 
-# Load additional census characteristics if available
-cat("Loading additional census data...\n")
-if(dir.exists("Ward Characteristics/Census 2011")) {
-  census_files <- list.files("Ward Characteristics/Census 2011", full.names = TRUE)
-  cat("Found", length(census_files), "census directories\n")
-  # Process census data here if needed
-}
-
 # Load ward statistics
 cat("Loading ward statistics...\n")
 if(file.exists("WARD_STATS.dta")) {
@@ -157,6 +149,31 @@ if (file.exists("Ward Level Local Election Results/shp/infuse_ward_lyr_2011_clip
 } else {
   cat("Warning: 2011 ward shapefile not found\n")
 }
+
+# Load and merge census characteristics
+cat("Loading additional census data...\n")
+if (dir.exists("Ward Characteristics/Census 2011") && exists("MAPPER")) {
+  ffs <- list.files("Ward Characteristics/Census 2011")
+  LABEL <- NULL
+  for (ff in ffs) {
+    path <- file.path("Ward Characteristics/Census 2011", ff, "")
+    FILE <- readFiles(path, collate = "list", fname = FALSE)
+    if (length(FILE) >= 2) {
+      FILE[[2]][, label := paste("label variable ", ColumnVariableCode, " \"", ff, " ",
+                                 ColumnVariableMeasurementUnit, " ", ColumnVariableDescription, "\"", sep = "")]
+      LABEL <- c(LABEL, FILE[[2]]$label)
+    }
+    FILE[[1]] <- merge(FILE[[1]], MAPPER[, .(GeographyCode = wd11cd, wd17cd)], by = "GeographyCode", all.x = TRUE)
+    FILE[[1]] <- FILE[[1]][!is.na(wd17cd)]
+    num_cols <- setdiff(names(FILE[[1]]), c("GeographyCode", "wd17cd"))
+    FILE[[1]][, (num_cols) := lapply(.SD, function(x) as.numeric(as.character(x))), .SDcols = num_cols]
+    WARD17 <- merge(WARD17, DTUniqueBy(FILE[[1]], "wd17cd"), by = "wd17cd", all.x = TRUE)
+  }
+  if (length(LABEL)) saveRDS(LABEL, file = "intermediate/census_labels.rds")
+} else {
+  cat("Warning: Census data directory not found or mapper missing\n")
+}
+
 
 cat("Mapping ward centroids to MSOA 2011 boundaries...\n")
 if (file.exists("shapefiles/Middle_Layer_Super_Output_Areas_December_2011_Full_Clipped_Boundaries_in_England_and_Wales/Middle_Layer_Super_Output_Areas_December_2011_Full_Clipped_Boundaries_in_England_and_Wales.shp")) {
