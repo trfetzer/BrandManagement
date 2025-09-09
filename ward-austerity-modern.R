@@ -128,15 +128,6 @@ if(file.exists("Ward Characteristics/WARD_POP_2015.csv")) {
   cat("Warning: Population data not found\n")
 }
 
-# Load ward statistics
-cat("Loading ward statistics...\n")
-if(file.exists("WARD_STATS.dta")) {
-  WARD_STATS <- data.table(read_dta("WARD_STATS.dta"))
-  cat("Loaded ward statistics with", nrow(WARD_STATS), "rows\n")
-  # Merge with existing data as needed
-} else {
-  cat("Warning: Ward statistics not found\n")
-}
 
 # Additional spatial crosswalks translated from ward-austerity.R
 cat("Mapping 2011 wards to 2017 wards...\n")
@@ -167,7 +158,10 @@ if (dir.exists("Ward Characteristics/Census 2011") && exists("MAPPER")) {
     FILE[[1]] <- FILE[[1]][!is.na(wd17cd)]
     num_cols <- setdiff(names(FILE[[1]]), c("GeographyCode", "wd17cd"))
     FILE[[1]][, (num_cols) := lapply(.SD, function(x) as.numeric(as.character(x))), .SDcols = num_cols]
-    WARD17 <- merge(WARD17, DTUniqueBy(FILE[[1]], "wd17cd"), by = "wd17cd", all.x = TRUE)
+	FILE[[1]][, GeographyCode := NULL]
+
+    WARD17 <- join(WARD17, DTUniqueBy(FILE[[1]], "wd17cd"), by = "wd17cd")
+
   }
   if (length(LABEL)) saveRDS(LABEL, file = "intermediate/census_labels.rds")
 } else {
