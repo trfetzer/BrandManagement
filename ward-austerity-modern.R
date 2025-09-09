@@ -12,6 +12,7 @@ library(terra)
 library(lubridate)
 library(zoo)
 library(stringr)
+library(plyr)
 
 # Check if required packages are installed
 required_packages <- c("data.table", "sf", "terra", "lubridate", "zoo", "stringr", "haven")
