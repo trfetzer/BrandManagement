@@ -245,7 +245,7 @@ for(type in types) {
 
   JSA.LONG <- JSA.LONG[!is.na(year)]
   JSA.LONG[, date := NULL]
-
+  JSA.LONG<-JSA.LONG[, list(value=sum(value,na.rm=TRUE)), by=c("OA","Type","year","quarter")]
   if(exists("WARD17_CENT")) {
     JSA.LONG <- merge(JSA.LONG, WARD17_CENT[, .(OA = msoa11nm, wd17cd, msoa11cd)], by = "OA", all.x = TRUE)
   }
