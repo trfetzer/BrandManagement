@@ -104,7 +104,7 @@ if(file.exists("Ward EURef/ward-results.csv")) {
   # Use the correct column names from ward-results.csv
   REF <- REF[, list(wd17cd = WardCode, Ward_Remain = Remain, Ward_Leave = Leave, 
                     Ward_RemainPct = Remain., Ward_LeavePct = Leave.)]
-  WARD17 <- merge(WARD17, REF, by = "wd17cd", all.x = TRUE)
+  WARD17 <- join(WARD17, REF, by = "wd17cd")
   cat("Loaded ward-level referendum data for", nrow(REF), "wards\n")
 } else {
   cat("Warning: Ward-level referendum data not found\n")
@@ -116,13 +116,13 @@ if(file.exists("Ward Characteristics/WARD_POP_2015.csv")) {
   POP <- data.table(read.csv("Ward Characteristics/WARD_POP_2015.csv"))
   POP[, All.Ages := as.numeric(gsub(",", "", All.Ages))]
   POP.WARD <- POP[, list(wd15cd = Ward, POP2015 = as.numeric(gsub(",", "", All.Ages)))][wd15cd != ""]
-  WARD17 <- merge(WARD17, POP.WARD[, list(wd15cd, POP2015)], by.x = "wd17cd", by.y = "wd15cd", all.x = TRUE)
+  WARD17 <- join(WARD17, POP.WARD[, list(wd15cd, POP2015)], by = "wd17cd")
   cat("Loaded population data for", nrow(POP.WARD), "wards\n")
 } else if(file.exists("Ward Characteristics/WARD_POP_2015.csv")) {
   POP <- data.table(read.csv("Ward Characteristics/WARD_POP_2015.csv"))
   POP[, All.Ages := as.numeric(gsub(",", "", All.Ages))]
   POP.WARD <- POP[, list(wd15cd = Ward, POP2015 = as.numeric(gsub(",", "", All.Ages)))][wd15cd != ""]
-  WARD17 <- merge(WARD17, POP.WARD[, list(wd15cd, POP2015)], by.x = "wd17cd", by.y = "wd15cd", all.x = TRUE)
+  WARD17 <- join(WARD17, POP.WARD[, list(wd15cd, POP2015)], by = "wd17cd")
   cat("Loaded population data for", nrow(POP.WARD), "wards\n")
 } else {
   cat("Warning: Population data not found\n")
@@ -154,7 +154,7 @@ if (dir.exists("Ward Characteristics/Census 2011") && exists("MAPPER")) {
                                  ColumnVariableMeasurementUnit, " ", ColumnVariableDescription, "\"", sep = "")]
       LABEL <- c(LABEL, FILE[[2]]$label)
     }
-    FILE[[1]] <- merge(FILE[[1]], MAPPER[, .(GeographyCode = wd11cd, wd17cd)], by = "GeographyCode", all.x = TRUE)
+    FILE[[1]] <- join(FILE[[1]], MAPPER[, .(GeographyCode = wd11cd, wd17cd)], by = "GeographyCode")
     FILE[[1]] <- FILE[[1]][!is.na(wd17cd)]
     num_cols <- setdiff(names(FILE[[1]]), c("GeographyCode", "wd17cd"))
     FILE[[1]][, (num_cols) := lapply(.SD, function(x) as.numeric(as.character(x))), .SDcols = num_cols]
@@ -263,8 +263,8 @@ for(measure in names(OUT)) {
     tt_clean <- gsub("Decision to apply a sanction", "Sanction", tt_clean)
     varname <- paste(measure, gsub("[^A-z0-9]", "", tt_clean), sep = "_")
     value_cols <- setdiff(names(TEMP.WIDE), "wd17cd")
-    setnames(TEMP.WIDE, value_cols, gsub("value", varname, value_cols))
-    WARD17 <- merge(WARD17, TEMP.WIDE, by = "wd17cd", all.x = TRUE)
+    setnames(TEMP.WIDE, value_cols, paste0(varname, value_cols))
+    WARD17 <- join(WARD17, TEMP.WIDE, by = "wd17cd")
     saveRDS(TEMP.WIDE, file = file.path("intermediate", paste0("sanctions_", tolower(measure), "_", gsub("[^A-z0-9]", "", tt_clean), ".rds")))
   }
 }
@@ -302,7 +302,7 @@ if (file.exists("shapefiles/CASW/UK_caswa_2001NAD1936.shp")) {
     wd17cd = st_drop_geometry(CASWARD.cent)$wd17cd
   )
   MAPPER <- unique(CASWARD_CENT[!is.na(wd17cd)], by = "mnemonic")
-  CLAIM.MERGE <- merge(CLAIM, MAPPER, by = "mnemonic", all.x = TRUE)
+  CLAIM.MERGE <- join(CLAIM, MAPPER, by = "mnemonic")
   CLAIM.MERGE <- CLAIM.MERGE[!is.na(wd17cd)]
   CLAIM.MERGE[, quarter := quarter(date)]
   CLAIM.MERGE[, year := year(date)]
@@ -316,7 +316,7 @@ if (file.exists("shapefiles/CASW/UK_caswa_2001NAD1936.shp")) {
     tt <- str_trim(gsub("statistical group - ", "", li))
     varname <- paste("CLAIM", gsub("[^A-z0-9]", "", tt), sep = "_")
     setnames(TEMP.WIDE, setdiff(names(TEMP.WIDE), "wd17cd"), paste0(varname, ".", setdiff(names(TEMP.WIDE), "wd17cd")))
-    WARD17 <- merge(WARD17, TEMP.WIDE, by = "wd17cd", all.x = TRUE)
+    WARD17 <- join(WARD17, TEMP.WIDE, by = "wd17cd")
     saveRDS(TEMP.WIDE, file = file.path("intermediate", paste0("claim_", gsub("[^A-z0-9]", "", tt), ".rds")))
   }
 } else {
@@ -334,7 +334,7 @@ if (file.exists("Ward Level Austerity/HB_COUNT.csv")) {
   setnames(HBC.LONG, "value", "housing_ben_rec_count")
   HBC.LONG[, year := as.numeric(substr(date,1,4))]
   HBC.LONG[, month := as.numeric(substr(date,5,6))]
-  HBC.LONG <- merge(HBC.LONG, LSOA_CENT[, .(OA = lsoa01nm, wd17cd)], by = "OA", all.x = TRUE)
+  HBC.LONG <- join(HBC.LONG, LSOA_CENT[, .(OA = lsoa01nm, wd17cd)], by = "OA", all.x = TRUE)
   HBC.LONG <- HBC.LONG[!is.na(wd17cd)]
   HBC.LONG[, housing_ben_rec_count := as.numeric(as.character(housing_ben_rec_count))]
   HBC.WARD <- HBC.LONG[, .(housing_ben_rec_count = sum(housing_ben_rec_count)), by = .(wd17cd, year, month)]
